@@ -35,7 +35,7 @@ class DocumentSerializer(serializers.ModelSerializer):
 
 
 class DocumentListQuerySerializer(serializers.Serializer):
-    active = serializers.BooleanField(required=False, default=True)
+    active = serializers.BooleanField(required=False, allow_null=True, default=None)
 
 
 class DocumentWriteSerializer(serializers.Serializer):

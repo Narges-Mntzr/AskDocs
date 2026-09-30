@@ -1,6 +1,5 @@
 from django.conf import settings
 from django.db import transaction
-from django.http import HttpResponse
 from rest_framework import status
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
@@ -14,46 +13,27 @@ from knowledge.serializers import (
     DocumentUpdateSerializer,
     DocumentWriteSerializer,
 )
-from knowledge.services import (
+from knowledge.services.general import (
     answer_question,
-    extract_text,
+    extract_and_validate_text,
     index_document,
     sha256_text,
 )
 
 
-class HealthView(APIView):
-    def get(self, request):
-        return Response(
-            {"status": "ok", "embedding_configured": bool(settings.EMBEDDING_API_KEY)}
-        )
-
-
-class SchemaView(APIView):
-    def get(self, request):
-        return Response(OPENAPI_SCHEMA)
-
-
-class DocsView(APIView):
-    def get(self, request):
-        html = """<!doctype html><html lang='en'><head><meta charset='utf-8'><title>Knowledge API</title>
-        <link rel='stylesheet' href='https://unpkg.com/swagger-ui-dist/swagger-ui.css'></head><body>
-        <div id='swagger-ui'></div><script src='https://unpkg.com/swagger-ui-dist/swagger-ui-bundle.js'></script>
-        <script>window.ui=SwaggerUIBundle({url:'/api/schema/',dom_id:'#swagger-ui',deepLinking:true,presets:[SwaggerUIBundle.presets.apis,SwaggerUIBundle.SwaggerUIStandalonePreset]});</script>
-        </body></html>"""
-        return HttpResponse(html)
-
-
-class DocumentListCreateView(APIView):
-    parser_classes = [JSONParser, FormParser, MultiPartParser]
-
+class DocumentListView(APIView):
     def get(self, request):
         query = DocumentListQuerySerializer(data=request.query_params)
         query.is_valid(raise_exception=True)
         queryset = Document.objects.all()
-        if query.validated_data["active"]:
-            queryset = queryset.filter(is_active=True)
+        if query.validated_data["active"] is not None:
+            is_active = query.validated_data["active"]
+            queryset = queryset.filter(is_active=is_active)
         return Response(DocumentSerializer(queryset, many=True).data)
+
+
+class DocumentCreateView(APIView):
+    parser_classes = [JSONParser, FormParser, MultiPartParser]
 
     @transaction.atomic
     def post(self, request):
@@ -64,7 +44,7 @@ class DocumentListCreateView(APIView):
         content = data.get("content") or None
         source_name = data.get("source_name") or getattr(uploaded, "name", "")
         try:
-            text = extract_text(
+            text = extract_and_validate_text(
                 content=content,
                 uploaded_file=None if content else uploaded,
                 source_name=source_name,
@@ -126,7 +106,7 @@ class DocumentDetailView(APIView):
                 uploaded, "name", document.source_name
             )
             try:
-                text = extract_text(
+                text = extract_and_validate_text(
                     content=None if uploaded is not None else content,
                     uploaded_file=uploaded,
                     source_name=source_name,
@@ -187,124 +167,3 @@ class StatsView(APIView):
                 "documents": Document.objects.count(),
             }
         )
-
-
-OPENAPI_SCHEMA = {
-    "openapi": "3.0.3",
-    "info": {
-        "title": "Document Q&A API",
-        "version": "1.0.0",
-        "description": "Citation-first RAG over active PDF, text and Markdown documents.",
-    },
-    "servers": [{"url": "/"}],
-    "paths": {
-        "/api/documents/": {
-            "get": {
-                "summary": "List documents",
-                "responses": {"200": {"description": "Document list"}},
-            },
-            "post": {
-                "summary": "Create and index a document",
-                "requestBody": {
-                    "required": True,
-                    "content": {
-                        "application/json": {
-                            "schema": {"$ref": "#/components/schemas/DocumentCreate"}
-                        },
-                        "multipart/form-data": {
-                            "schema": {"$ref": "#/components/schemas/DocumentUpload"}
-                        },
-                    },
-                },
-                "responses": {
-                    "201": {"description": "Created"},
-                    "400": {"description": "Invalid document"},
-                },
-            },
-        },
-        "/api/documents/{id}/": {
-            "parameters": [
-                {
-                    "name": "id",
-                    "in": "path",
-                    "required": True,
-                    "schema": {"type": "integer"},
-                }
-            ],
-            "get": {
-                "summary": "Get a document",
-                "responses": {
-                    "200": {"description": "Document"},
-                    "404": {"description": "Not found"},
-                },
-            },
-            "put": {
-                "summary": "Replace document content and re-index",
-                "responses": {"200": {"description": "Updated"}},
-            },
-            "patch": {
-                "summary": "Edit and re-index a document",
-                "responses": {"200": {"description": "Updated"}},
-            },
-            "delete": {
-                "summary": "Deactivate a document",
-                "responses": {"204": {"description": "Deactivated"}},
-            },
-        },
-        "/api/ask/": {
-            "post": {
-                "summary": "Ask a citation-backed question",
-                "requestBody": {
-                    "required": True,
-                    "content": {
-                        "application/json": {
-                            "schema": {"$ref": "#/components/schemas/AskRequest"}
-                        }
-                    },
-                },
-                "responses": {"200": {"description": "Answer with sources"}},
-            }
-        },
-        "/health/": {
-            "get": {
-                "summary": "Health check",
-                "responses": {"200": {"description": "Healthy"}},
-            }
-        },
-    },
-    "components": {
-        "schemas": {
-            "DocumentCreate": {
-                "type": "object",
-                "required": ["title", "content"],
-                "properties": {
-                    "title": {"type": "string"},
-                    "content": {"type": "string"},
-                    "source_name": {"type": "string"},
-                },
-            },
-            "DocumentUpload": {
-                "type": "object",
-                "required": ["title", "file"],
-                "properties": {
-                    "title": {"type": "string"},
-                    "file": {"type": "string", "format": "binary"},
-                    "source_name": {"type": "string"},
-                },
-            },
-            "AskRequest": {
-                "type": "object",
-                "required": ["question"],
-                "properties": {
-                    "question": {"type": "string"},
-                    "top_k": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 20,
-                        "default": 5,
-                    },
-                },
-            },
-        }
-    },
-}

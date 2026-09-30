@@ -10,7 +10,6 @@ class ChunkInline(admin.TabularInline):
     fields = ("ordinal", "text", "created_at")
     readonly_fields = ("ordinal", "text", "created_at")
     can_delete = False
-    show_change_link = True
 
     def has_add_permission(self, request, obj=None):
         return False

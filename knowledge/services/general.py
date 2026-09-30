@@ -1,16 +1,14 @@
 import hashlib
 import io
-import json
 import math
 import re
-import urllib.error
-import urllib.request
 from dataclasses import dataclass
 
 from django.conf import settings
 from pypdf import PdfReader
 
 from knowledge.models import Chunk, Document
+from knowledge.services.openai import create_embeddings
 
 
 SUPPORTED_EXTENSIONS = {".pdf", ".txt", ".text", ".md", ".markdown"}
@@ -20,7 +18,7 @@ def sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-def extract_text(
+def extract_and_validate_text(
     *, content: str | None = None, uploaded_file=None, source_name: str = ""
 ) -> str:
     """Extract UTF-8 text from text/markdown or a text PDF."""
@@ -74,52 +72,10 @@ def split_chunks(text: str, max_chars: int = 1400, overlap: int = 180) -> list[s
     return chunks
 
 
-def _fallback_embedding(text: str, dimensions: int = 256) -> list[float]:
-    """Deterministic local fallback, useful for development and offline tests."""
-    values = [0.0] * dimensions
-    for token in re.findall(r"\w+", text.casefold()):
-        digest = hashlib.blake2b(token.encode(), digest_size=8).digest()
-        index = int.from_bytes(digest[:4], "big") % dimensions
-        values[index] += 1.0 if digest[4] % 2 else -1.0
-    norm = math.sqrt(sum(v * v for v in values)) or 1.0
-    return [v / norm for v in values]
-
-
 def embed_texts(texts: list[str]) -> list[list[float]]:
     if not texts:
         return []
-    if not settings.EMBEDDING_API_KEY:
-        return [_fallback_embedding(t) for t in texts]
-    payload = json.dumps({"model": settings.EMBEDDING_MODEL, "input": texts}).encode()
-    request = urllib.request.Request(
-        f"{settings.EMBEDDING_BASE_URL}/embeddings",
-        data=payload,
-        headers={
-            "Authorization": f"Bearer {settings.EMBEDDING_API_KEY}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(
-            request, timeout=settings.EMBEDDING_TIMEOUT_SECONDS
-        ) as response:
-            result = json.loads(response.read().decode("utf-8"))
-        data = sorted(result["data"], key=lambda item: item.get("index", 0))
-        vectors = [item["embedding"] for item in data]
-        if len(vectors) != len(texts):
-            raise ValueError("Embedding service returned an unexpected item count")
-        return vectors
-    except (
-        urllib.error.URLError,
-        TimeoutError,
-        KeyError,
-        ValueError,
-        json.JSONDecodeError,
-    ):
-        # The application remains usable during a temporary provider outage. The health
-        # endpoint and document metadata make the fallback observable during operations.
-        return [_fallback_embedding(t) for t in texts]
+    return create_embeddings(texts)
 
 
 def embed_in_batches(
