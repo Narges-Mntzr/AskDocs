@@ -9,8 +9,11 @@ DEBUG = os.getenv("DJANGO_DEBUG", "0").lower() in {"1", "true", "yes"}
 ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
 
 INSTALLED_APPS = [
+    "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
     "knowledge",
@@ -18,12 +21,29 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
-TEMPLATES = []
+TEMPLATES = [
+    {
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
+            ],
+        },
+    },
+]
 WSGI_APPLICATION = "config.wsgi.application"
 
 DATABASES = {
@@ -48,9 +68,9 @@ REST_FRAMEWORK = {
     "UNAUTHENTICATED_USER": None,
 }
 
-EMBEDDING_BASE_URL = os.getenv("EMBEDDING_BASE_URL", "https://models-interview.arvancloudai.ir/v1").rstrip("/")
+EMBEDDING_BASE_URL = os.getenv("EMBEDDING_BASE_URL").rstrip("/")
 EMBEDDING_API_KEY = os.getenv("EMBEDDING_API_KEY", "")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "Bge-m3")
 EMBEDDING_TIMEOUT_SECONDS = float(os.getenv("EMBEDDING_TIMEOUT_SECONDS", "20"))
 RAG_TOP_K = int(os.getenv("RAG_TOP_K", "5"))
-RAG_MIN_SIMILARITY = float(os.getenv("RAG_MIN_SIMILARITY", "0.20"))
+RAG_MIN_SIMILARITY = float(os.getenv("RAG_MIN_SIMILARITY", "0.30"))

@@ -20,7 +20,9 @@ def sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-def extract_text(*, content: str | None = None, uploaded_file=None, source_name: str = "") -> str:
+def extract_text(
+    *, content: str | None = None, uploaded_file=None, source_name: str = ""
+) -> str:
     """Extract UTF-8 text from text/markdown or a text PDF."""
     if content is not None:
         return content.replace("\r\n", "\n").strip()
@@ -38,7 +40,11 @@ def extract_text(*, content: str | None = None, uploaded_file=None, source_name:
 
 def split_chunks(text: str, max_chars: int = 1400, overlap: int = 180) -> list[str]:
     """Paragraph-aware chunker with a bounded overlap for retrieval context."""
-    paragraphs = [re.sub(r"[ \t]+", " ", p).strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
+    paragraphs = [
+        re.sub(r"[ \t]+", " ", p).strip()
+        for p in re.split(r"\n\s*\n", text)
+        if p.strip()
+    ]
     if not paragraphs:
         return []
     chunks: list[str] = []
@@ -49,7 +55,10 @@ def split_chunks(text: str, max_chars: int = 1400, overlap: int = 180) -> list[s
                 chunks.append(current.strip())
                 current = ""
             step = max(1, max_chars - overlap)
-            chunks.extend(paragraph[start : start + max_chars].strip() for start in range(0, len(paragraph), step))
+            chunks.extend(
+                paragraph[start : start + max_chars].strip()
+                for start in range(0, len(paragraph), step)
+            )
             continue
         candidate = f"{current}\n\n{paragraph}" if current else paragraph
         if current and len(candidate) > max_chars:
@@ -85,24 +94,37 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
     request = urllib.request.Request(
         f"{settings.EMBEDDING_BASE_URL}/embeddings",
         data=payload,
-        headers={"Authorization": f"Bearer {settings.EMBEDDING_API_KEY}", "Content-Type": "application/json"},
+        headers={
+            "Authorization": f"Bearer {settings.EMBEDDING_API_KEY}",
+            "Content-Type": "application/json",
+        },
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=settings.EMBEDDING_TIMEOUT_SECONDS) as response:
+        with urllib.request.urlopen(
+            request, timeout=settings.EMBEDDING_TIMEOUT_SECONDS
+        ) as response:
             result = json.loads(response.read().decode("utf-8"))
         data = sorted(result["data"], key=lambda item: item.get("index", 0))
         vectors = [item["embedding"] for item in data]
         if len(vectors) != len(texts):
             raise ValueError("Embedding service returned an unexpected item count")
         return vectors
-    except (urllib.error.URLError, TimeoutError, KeyError, ValueError, json.JSONDecodeError) as exc:
+    except (
+        urllib.error.URLError,
+        TimeoutError,
+        KeyError,
+        ValueError,
+        json.JSONDecodeError,
+    ):
         # The application remains usable during a temporary provider outage. The health
         # endpoint and document metadata make the fallback observable during operations.
         return [_fallback_embedding(t) for t in texts]
 
 
-def embed_in_batches(texts: list[str], max_request_chars: int = 180_000) -> list[list[float]]:
+def embed_in_batches(
+    texts: list[str], max_request_chars: int = 180_000
+) -> list[list[float]]:
     """Respect the provider's 200k-character request limit."""
     vectors: list[list[float]] = []
     batch: list[str] = []
@@ -151,7 +173,9 @@ def retrieve(question: str, top_k: int | None = None) -> list[Match]:
     query_vector = embed_texts([question])[0]
     matches = [
         Match(chunk=chunk, score=cosine_similarity(query_vector, chunk.embedding))
-        for chunk in Chunk.objects.select_related("document").filter(document__is_active=True)
+        for chunk in Chunk.objects.select_related("document").filter(
+            document__is_active=True
+        )
     ]
     matches.sort(key=lambda item: item.score, reverse=True)
     return matches[: max(1, min(top_k or settings.RAG_TOP_K, 20))]

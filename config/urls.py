@@ -1,11 +1,12 @@
+from django.contrib import admin
 from django.urls import include, path
 
-from knowledge.views import api_docs, api_schema, health
+from knowledge.views import DocsView, HealthView, SchemaView
 
 urlpatterns = [
-    path("health/", health, name="health"),
-    path("api/health/", health, name="api-health"),
-    path("api/schema/", api_schema, name="api-schema"),
-    path("api/docs/", api_docs, name="api-docs"),
+    path("admin/", admin.site.urls),
+    path("health/", HealthView.as_view(), name="health"),
+    path("api/schema/", SchemaView.as_view(), name="api-schema"),
+    path("api/docs/", DocsView.as_view(), name="api-docs"),
     path("api/", include("knowledge.urls")),
 ]
