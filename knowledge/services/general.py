@@ -34,10 +34,12 @@ def extract_and_validate_text(*, content: str | None = None, uploaded_file=None)
     return raw.decode("utf-8-sig").replace("\r\n", "\n").strip()
 
 
-def split_chunks(text: str, max_chars: int = 1400, overlap: int = 180) -> list[str]:
+def split_chunks(text: str, max_chars: int = 2200, overlap: int = 180) -> list[str]:
     """One chunk per non-empty line. Lines longer than max_chars are windowed."""
     lines = [
-        re.sub(r"[ \t]+", " ", line).strip() for line in text.splitlines() if line.strip()
+        re.sub(r"[ \t]+", " ", line).strip()
+        for line in text.splitlines()
+        if line.strip()
     ]
     if not lines:
         return []
@@ -96,7 +98,11 @@ class Match:
 
 def index_document(document: Document) -> int:
     document.chunks.all().delete()
-    chunks = split_chunks(document.content)
+    chunks = split_chunks(
+        document.content,
+        max_chars=settings.RAG_CHUNK_MAX_CHARS,
+        overlap=settings.RAG_CHUNK_OVERLAP,
+    )
     vectors = embed_in_batches(chunks)
     Chunk.objects.bulk_create(
         [

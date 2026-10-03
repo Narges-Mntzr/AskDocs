@@ -22,7 +22,7 @@ class SplitChunksTests(SimpleTestCase):
     def test_long_line_is_split(self):
         chunks = split_chunks("ا" * 3000)
         self.assertGreater(len(chunks), 1)
-        self.assertTrue(all(len(chunk) <= 1400 for chunk in chunks))
+        self.assertTrue(all(len(chunk) <= 2200 for chunk in chunks))
 
 
 @override_settings(EMBEDDING_API_KEY="")

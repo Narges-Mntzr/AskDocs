@@ -7,3 +7,4 @@ media/
 staticfiles/
 .pytest_cache/
 .venv/
+knowledge/eval/.embedding-cache/
