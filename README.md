@@ -123,3 +123,10 @@ Threshold moved the score much more than chunk size. Lower thresholds answered r
 `Embedding-3-Small` at 400 characters and the same 0.40 threshold fell to 85%. The full ranking is in `knowledge/eval/report.md` and `knowledge/eval/results.csv`.
 
 API behavior is also covered by `python manage.py test knowledge.tests`, which stubs the embedding client and does not call the remote API.
+
+## What could be better
+
+- Normalize documents and questions the same way before embedding and before sentence overlap: Arabic Yeh/Kaf to Persian, ZWNJ (`می‌شود` / `می شود`), tatweel, diacritics, and digit forms.
+- Combine cosine similarity with a lexical score (BM25) and rerank the top hits, so names, numbers, and near-matches rank above unrelated text. One global threshold currently has to do both jobs.
+- Split on sentences or words instead of whole lines and raw character cuts, so a fact stays next to the sentence that qualifies it.
+- Store embeddings in a vector index (sqlite-vec or pgvector) instead of scoring every JSON vector in Python.
