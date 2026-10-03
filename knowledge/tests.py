@@ -1,17 +1,53 @@
+import io
 from unittest.mock import patch
 
 from django.contrib import admin
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import SimpleTestCase, TestCase, override_settings
+from pypdf import PdfWriter
+from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 from rest_framework.test import APIClient
 
 from knowledge.models import Chunk, Document
-from knowledge.services.general import split_chunks
+from knowledge.services.general import embed_in_batches, split_chunks
 
 
 def fake_embeddings(texts, model=None):
     return [[1.0, 0.0] for _ in texts]
+
+
+def pdf_with_jittered_line() -> bytes:
+    """Two glyphs of one line, plus a second line. Y differs by a fraction of a point."""
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=400, height=200)
+    page[NameObject("/Resources")] = DictionaryObject(
+        {
+            NameObject("/Font"): DictionaryObject(
+                {
+                    NameObject("/F1"): DictionaryObject(
+                        {
+                            NameObject("/Type"): NameObject("/Font"),
+                            NameObject("/Subtype"): NameObject("/Type1"),
+                            NameObject("/BaseFont"): NameObject("/Helvetica"),
+                        }
+                    )
+                }
+            )
+        }
+    )
+    stream = DecodedStreamObject()
+    stream.set_data(
+        b"BT /F1 16 Tf "
+        b"1 0 0 1 40 100 Tm (Hello) Tj "
+        b"1 0 0 1 0 0 Tm (year) Tj "
+        b"1 0 0 1 120 100.6 Tm (world) Tj "
+        b"1 0 0 1 40 70 Tm (Second) Tj ET"
+    )
+    page[NameObject("/Contents")] = stream
+    buffer = io.BytesIO()
+    writer.write(buffer)
+    return buffer.getvalue()
 
 
 class SplitChunksTests(SimpleTestCase):
@@ -23,6 +59,15 @@ class SplitChunksTests(SimpleTestCase):
         chunks = split_chunks("ا" * 3000)
         self.assertGreater(len(chunks), 1)
         self.assertTrue(all(len(chunk) <= 2200 for chunk in chunks))
+
+    def test_embedding_requests_stay_small(self):
+        with patch(
+            "knowledge.services.general.create_embeddings",
+            side_effect=lambda texts, model=None: [[1.0] for _ in texts],
+        ) as embed:
+            vectors = embed_in_batches(["متن"] * 10)
+        self.assertEqual(len(vectors), 10)
+        self.assertEqual([len(call.args[0]) for call in embed.call_args_list], [4, 4, 2])
 
 
 @override_settings(EMBEDDING_API_KEY="")
@@ -106,6 +151,19 @@ class DocumentApiTests(TestCase):
         self.assertIn("متن اظهارنامه.", response.data["content"])
         self.assertNotIn("source_name", response.data)
 
+    def test_pdf_upload_joins_words_on_the_same_line(self):
+        upload = SimpleUploadedFile(
+            "note.pdf", pdf_with_jittered_line(), content_type="application/pdf"
+        )
+        response = self.client.post(
+            "/knowledge/documents/create/",
+            {"title": "حافظ", "content": "", "file": upload},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["content"], "Hello year world\nSecond")
+        self.assertEqual(response.data["chunk_count"], 2)
+
     def test_update_document_from_file(self):
         created = self.client.post(
             "/knowledge/documents/create/",
@@ -148,6 +206,30 @@ class DocumentApiTests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 201)
+
+    def test_schema_comes_from_serializers(self):
+        schema = self.client.get("/api/schema/").json()
+        ask = schema["components"]["schemas"]["AskRequest"]
+        self.assertEqual(ask["required"], ["question"])
+        self.assertEqual(ask["properties"]["top_k"]["maximum"], 20)
+        self.assertEqual(ask["properties"]["question"]["maxLength"], 2000)
+        document_write = schema["components"]["schemas"]["DocumentWrite"]
+        self.assertIn("file", document_write["properties"])
+        self.assertEqual(document_write["properties"]["file"]["format"], "binary")
+        ask_path = schema["paths"]["/knowledge/ask/"]["post"]
+        self.assertEqual(
+            ask_path["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/AskRequest",
+        )
+        self.assertIn(
+            "active",
+            {
+                parameter["name"]
+                for parameter in schema["paths"]["/knowledge/documents/"]["get"][
+                    "parameters"
+                ]
+            },
+        )
 
     def test_models_are_registered_in_admin(self):
         self.assertIn(Document, admin.site._registry)

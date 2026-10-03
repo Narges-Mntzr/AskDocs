@@ -22,7 +22,12 @@ from knowledge.services.general import (
 
 
 class DocumentListView(APIView):
+    query_serializer_class = DocumentListQuerySerializer
+    response_serializer_class = DocumentSerializer
+    response_many = True
+
     def get(self, request):
+        """List documents."""
         query = DocumentListQuerySerializer(data=request.query_params)
         query.is_valid(raise_exception=True)
         queryset = Document.objects.all()
@@ -34,9 +39,12 @@ class DocumentListView(APIView):
 
 class DocumentCreateView(APIView):
     parser_classes = [JSONParser, FormParser, MultiPartParser]
+    request_serializer_class = DocumentWriteSerializer
+    response_serializer_class = DocumentSerializer
 
     @transaction.atomic
     def post(self, request):
+        """Create and index a document."""
         serializer = DocumentWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
@@ -71,8 +79,12 @@ class DocumentCreateView(APIView):
 
 class DocumentDetailView(APIView):
     parser_classes = [JSONParser, FormParser, MultiPartParser]
+    request_serializer_class = DocumentUpdateSerializer
+    response_serializer_class = DocumentSerializer
+    schema_status_codes = {"POST": "200", "DELETE": "200"}
 
     def get(self, request, pk):
+        """Get a document."""
         try:
             document = Document.objects.get(pk=pk)
         except Document.DoesNotExist:
@@ -82,6 +94,7 @@ class DocumentDetailView(APIView):
         return Response(DocumentSerializer(document).data)
 
     def post(self, request, pk):
+        """Edit and re-index a document."""
         try:
             document = Document.objects.get(pk=pk)
         except Document.DoesNotExist:
@@ -122,9 +135,11 @@ class DocumentDetailView(APIView):
         return Response(DocumentSerializer(document).data)
 
     def put(self, request, pk):
+        """Replace document content and re-index."""
         return self.post(request, pk)
 
     def delete(self, request, pk):
+        """Deactivate a document."""
         try:
             document = Document.objects.get(pk=pk)
         except Document.DoesNotExist:
@@ -138,8 +153,10 @@ class DocumentDetailView(APIView):
 
 class AskView(APIView):
     parser_classes = [JSONParser, FormParser]
+    request_serializer_class = AskRequestSerializer
 
     def post(self, request):
+        """Ask a citation-backed question."""
         serializer = AskRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         question = serializer.validated_data["question"].strip()
@@ -149,6 +166,7 @@ class AskView(APIView):
 
 class StatsView(APIView):
     def get(self, request):
+        """Count stored documents."""
         return Response(
             {
                 "active_documents": Document.objects.filter(is_active=True).count(),

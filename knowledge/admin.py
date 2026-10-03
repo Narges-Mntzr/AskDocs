@@ -1,7 +1,19 @@
+from django import forms
 from django.contrib import admin
 from django.db.models import Count
 
 from knowledge.models import Chunk, Document
+
+
+class DocumentAdminForm(forms.ModelForm):
+    title = forms.CharField(
+        max_length=255,
+        widget=forms.TextInput(attrs={"class": "vTextField", "size": "32"}),
+    )
+
+    class Meta:
+        model = Document
+        fields = "__all__"
 
 
 class ChunkInline(admin.TabularInline):
@@ -17,6 +29,7 @@ class ChunkInline(admin.TabularInline):
 
 @admin.register(Document)
 class DocumentAdmin(admin.ModelAdmin):
+    form = DocumentAdminForm
     list_display = (
         "title",
         "version",

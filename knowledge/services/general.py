@@ -2,6 +2,7 @@ import hashlib
 import io
 import math
 import re
+import unicodedata
 from dataclasses import dataclass
 
 from django.conf import settings
@@ -12,6 +13,10 @@ from knowledge.services.openai import create_embeddings
 
 
 SUPPORTED_EXTENSIONS = {".pdf", ".txt", ".text", ".md", ".markdown"}
+# Same visual line in a PDF can jitter by a fraction of the font size.
+_PDF_LINE_Y_TOLERANCE = 0.45
+# A larger jump is a paragraph break; ordinary leading stays one chunk.
+_PDF_PARAGRAPH_Y_GAP = 1.8
 
 
 def sha256_text(value: str) -> str:
@@ -29,9 +34,61 @@ def extract_and_validate_text(*, content: str | None = None, uploaded_file=None)
         raise ValueError("supported formats are PDF, TXT and Markdown")
     raw = uploaded_file.read()
     if name.endswith(".pdf") or raw[:4] == b"%PDF":
-        reader = PdfReader(io.BytesIO(raw))
-        return "\n\n".join((page.extract_text() or "") for page in reader.pages).strip()
+        return _extract_pdf_text(raw)
     return raw.decode("utf-8-sig").replace("\r\n", "\n").strip()
+
+
+def _extract_pdf_text(raw: bytes) -> str:
+    """Join glyphs that share a line. pypdf otherwise splits one line into many."""
+    reader = PdfReader(io.BytesIO(raw))
+    pages = [_extract_pdf_page(page) for page in reader.pages]
+    return "\n\n".join(page for page in pages if page).strip()
+
+
+def _extract_pdf_page(page) -> str:
+    fragments: list[tuple[float, float, str]] = []
+
+    def visitor(text, cm, tm, font_dict, font_size):
+        cleaned = unicodedata.normalize("NFKC", text).strip()
+        if not cleaned:
+            return
+        positioned = abs(float(tm[4])) > 0.01 or abs(float(tm[5])) > 0.01
+        if positioned:
+            y = float(cm[1]) * float(tm[4]) + float(cm[3]) * float(tm[5]) + float(cm[5])
+            size = abs(float(cm[3]) * float(tm[3]) * float(font_size)) or 12.0
+        elif fragments:
+            y, size, _ = fragments[-1]
+        else:
+            y, size = 0.0, 12.0
+        fragments.append((y, size, cleaned))
+
+    page.extract_text(visitor_text=visitor)
+    return _join_pdf_lines(fragments)
+
+
+def _join_pdf_lines(fragments: list[tuple[float, float, str]]) -> str:
+    lines: list[tuple[float, float, str]] = []
+    line_y: float | None = None
+    tolerance = 0.0
+    for y, size, text in fragments:
+        if line_y is None or abs(y - line_y) > tolerance:
+            lines.append((y, size, text))
+            line_y = y
+            tolerance = max(size, 1.0) * _PDF_LINE_Y_TOLERANCE
+        else:
+            prev_y, prev_size, prev_text = lines[-1]
+            lines[-1] = (prev_y, prev_size, f"{prev_text} {text}")
+
+    paragraphs: list[str] = []
+    previous_y: float | None = None
+    for y, size, text in lines:
+        gap_limit = max(size, 1.0) * _PDF_PARAGRAPH_Y_GAP
+        if previous_y is None or abs(y - previous_y) > gap_limit:
+            paragraphs.append(text)
+        else:
+            paragraphs[-1] = f"{paragraphs[-1]} {text}"
+        previous_y = y
+    return "\n".join(paragraphs)
 
 
 def split_chunks(text: str, max_chars: int = 2200, overlap: int = 180) -> list[str]:
@@ -63,14 +120,20 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
 
 
 def embed_in_batches(
-    texts: list[str], max_request_chars: int = 180_000
+    texts: list[str],
+    max_request_chars: int = 180_000,
+    max_items: int = 4,
 ) -> list[list[float]]:
-    """Respect the provider's 200k-character request limit."""
+    """Keep each request under the provider character cap and a small input count.
+
+    More than a handful of Embedding-3-Large inputs do not return within the HTTP timeout.
+    """
     vectors: list[list[float]] = []
     batch: list[str] = []
     chars = 0
     for text in texts:
-        if batch and chars + len(text) > max_request_chars:
+        overflows = chars + len(text) > max_request_chars or len(batch) >= max_items
+        if batch and overflows:
             vectors.extend(embed_texts(batch))
             batch, chars = [], 0
         batch.append(text)

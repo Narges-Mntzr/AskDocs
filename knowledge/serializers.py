@@ -8,7 +8,7 @@ CONTENT_MAX_LENGTH = 1_000_000
 class DocumentSerializer(serializers.ModelSerializer):
     chunk_count = serializers.SerializerMethodField()
 
-    def get_chunk_count(self, obj):
+    def get_chunk_count(self, obj) -> int:
         return obj.chunks.count()
 
     class Meta:
