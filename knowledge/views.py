@@ -42,12 +42,10 @@ class DocumentCreateView(APIView):
         data = serializer.validated_data
         uploaded = data.get("file")
         content = data.get("content") or None
-        source_name = data.get("source_name") or getattr(uploaded, "name", "")
         try:
             text = extract_and_validate_text(
                 content=content,
                 uploaded_file=None if content else uploaded,
-                source_name=source_name,
             )
         except Exception as exc:
             # pypdf raises several parser-specific exceptions; return a stable API error.
@@ -62,7 +60,6 @@ class DocumentCreateView(APIView):
             )
         document = Document.objects.create(
             title=data["title"],
-            source_name=source_name,
             content=text,
             content_hash=sha256_text(text),
         )
@@ -75,22 +72,18 @@ class DocumentCreateView(APIView):
 class DocumentDetailView(APIView):
     parser_classes = [JSONParser, FormParser, MultiPartParser]
 
-    def get_object(self, pk):
-        return Document.objects.get(pk=pk)
-
     def get(self, request, pk):
         try:
-            document = self.get_object(pk)
+            document = Document.objects.get(pk=pk)
         except Document.DoesNotExist:
             return Response(
                 {"detail": "document not found"}, status=status.HTTP_404_NOT_FOUND
             )
         return Response(DocumentSerializer(document).data)
 
-    @transaction.atomic
-    def patch(self, request, pk):
+    def post(self, request, pk):
         try:
-            document = self.get_object(pk)
+            document = Document.objects.get(pk=pk)
         except Document.DoesNotExist:
             return Response(
                 {"detail": "document not found"}, status=status.HTTP_404_NOT_FOUND
@@ -102,14 +95,10 @@ class DocumentDetailView(APIView):
         content = data.get("content") or None
         has_new_content = uploaded is not None or bool(content)
         if has_new_content:
-            source_name = data.get("source_name") or getattr(
-                uploaded, "name", document.source_name
-            )
             try:
                 text = extract_and_validate_text(
                     content=None if uploaded is not None else content,
                     uploaded_file=uploaded,
-                    source_name=source_name,
                 )
             except Exception as exc:
                 return Response(
@@ -124,7 +113,6 @@ class DocumentDetailView(APIView):
             document.content = text
             document.content_hash = sha256_text(text)
             document.version += 1
-            document.source_name = source_name
             document.is_active = True
         if "title" in data:
             document.title = data["title"]
@@ -134,18 +122,18 @@ class DocumentDetailView(APIView):
         return Response(DocumentSerializer(document).data)
 
     def put(self, request, pk):
-        return self.patch(request, pk)
+        return self.post(request, pk)
 
     def delete(self, request, pk):
         try:
-            document = self.get_object(pk)
+            document = Document.objects.get(pk=pk)
         except Document.DoesNotExist:
             return Response(
                 {"detail": "document not found"}, status=status.HTTP_404_NOT_FOUND
             )
         document.is_active = False
         document.save(update_fields=["is_active", "updated_at"])
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response(status=status.HTTP_200_OK)
 
 
 class AskView(APIView):

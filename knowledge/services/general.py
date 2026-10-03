@@ -18,15 +18,13 @@ def sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-def extract_and_validate_text(
-    *, content: str | None = None, uploaded_file=None, source_name: str = ""
-) -> str:
+def extract_and_validate_text(*, content: str | None = None, uploaded_file=None) -> str:
     """Extract UTF-8 text from text/markdown or a text PDF."""
     if content is not None:
         return content.replace("\r\n", "\n").strip()
     if uploaded_file is None:
         raise ValueError("One of content or file is required")
-    name = (source_name or getattr(uploaded_file, "name", "")).lower()
+    name = (getattr(uploaded_file, "name", "") or "").lower()
     if name and not any(name.endswith(ext) for ext in SUPPORTED_EXTENSIONS):
         raise ValueError("supported formats are PDF, TXT and Markdown")
     raw = uploaded_file.read()
@@ -37,38 +35,22 @@ def extract_and_validate_text(
 
 
 def split_chunks(text: str, max_chars: int = 1400, overlap: int = 180) -> list[str]:
-    """Paragraph-aware chunker with a bounded overlap for retrieval context."""
-    paragraphs = [
-        re.sub(r"[ \t]+", " ", p).strip()
-        for p in re.split(r"\n\s*\n", text)
-        if p.strip()
+    """One chunk per non-empty line. Lines longer than max_chars are windowed."""
+    lines = [
+        re.sub(r"[ \t]+", " ", line).strip() for line in text.splitlines() if line.strip()
     ]
-    if not paragraphs:
+    if not lines:
         return []
+    step = max(1, max_chars - overlap)
     chunks: list[str] = []
-    current = ""
-    for paragraph in paragraphs:
-        if len(paragraph) > max_chars:
-            if current:
-                chunks.append(current.strip())
-                current = ""
-            step = max(1, max_chars - overlap)
-            chunks.extend(
-                paragraph[start : start + max_chars].strip()
-                for start in range(0, len(paragraph), step)
-            )
+    for line in lines:
+        if len(line) <= max_chars:
+            chunks.append(line)
             continue
-        candidate = f"{current}\n\n{paragraph}" if current else paragraph
-        if current and len(candidate) > max_chars:
-            chunks.append(current.strip())
-            tail = current[-overlap:].strip()
-            current = f"{tail}\n\n{paragraph}" if tail else paragraph
-            if len(current) > max_chars:
-                current = paragraph
-        else:
-            current = candidate
-    if current.strip():
-        chunks.append(current.strip())
+        for start in range(0, len(line), step):
+            piece = line[start : start + max_chars].strip()
+            if piece:
+                chunks.append(piece)
     return chunks
 
 

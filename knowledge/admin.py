@@ -19,14 +19,13 @@ class ChunkInline(admin.TabularInline):
 class DocumentAdmin(admin.ModelAdmin):
     list_display = (
         "title",
-        "source_name",
         "version",
         "is_active",
         "chunk_count",
         "updated_at",
     )
     list_filter = ("is_active",)
-    search_fields = ("title", "source_name", "content")
+    search_fields = ("title", "content")
     readonly_fields = ("content", "content_hash", "version", "created_at", "updated_at")
     inlines = (ChunkInline,)
 

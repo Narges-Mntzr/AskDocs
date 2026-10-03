@@ -16,7 +16,6 @@ class DocumentSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "title",
-            "source_name",
             "content",
             "version",
             "is_active",
@@ -44,9 +43,6 @@ class DocumentWriteSerializer(serializers.Serializer):
         required=False, allow_blank=True, allow_null=True, max_length=CONTENT_MAX_LENGTH
     )
     file = serializers.FileField(required=False, allow_empty_file=False)
-    source_name = serializers.CharField(
-        required=False, allow_blank=True, max_length=255
-    )
 
     def validate(self, attrs):
         content = attrs.get("content")
@@ -57,8 +53,6 @@ class DocumentWriteSerializer(serializers.Serializer):
         has_file = attrs.get("file") is not None
         if not has_text and not has_file:
             raise serializers.ValidationError("One of content or file is required.")
-        source_name = attrs.get("source_name", "")
-        attrs["source_name"] = source_name.strip()
         return attrs
 
 
@@ -68,9 +62,6 @@ class DocumentUpdateSerializer(serializers.Serializer):
         required=False, allow_blank=True, allow_null=True, max_length=CONTENT_MAX_LENGTH
     )
     file = serializers.FileField(required=False, allow_empty_file=False)
-    source_name = serializers.CharField(
-        required=False, allow_blank=True, max_length=255
-    )
 
     def validate(self, attrs):
         if "title" in attrs:
@@ -83,8 +74,6 @@ class DocumentUpdateSerializer(serializers.Serializer):
         if "content" in attrs:
             content = attrs["content"]
             attrs["content"] = content.strip() if isinstance(content, str) else None
-        if "source_name" in attrs:
-            attrs["source_name"] = attrs["source_name"].strip()
         content = attrs.get("content")
         has_file = attrs.get("file") is not None
         if "content" in attrs and not content and not has_file:

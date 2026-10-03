@@ -3,7 +3,6 @@ from django.db import models
 
 class Document(models.Model):
     title = models.TextField(max_length=255)
-    source_name = models.TextField(max_length=255, blank=True)
     content = models.TextField(max_length=1_000_000)
     content_hash = models.TextField(max_length=64)
     version = models.PositiveIntegerField(default=1)

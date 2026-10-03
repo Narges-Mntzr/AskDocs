@@ -79,15 +79,41 @@ OPENAPI_SCHEMA = {
             },
             "put": {
                 "summary": "Replace document content and re-index",
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/DocumentUpdate"}
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/DocumentUpdateUpload"
+                            }
+                        },
+                    },
+                },
                 "responses": {"200": {"description": "Updated"}},
             },
-            "patch": {
+            "post": {
                 "summary": "Edit and re-index a document",
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/DocumentUpdate"}
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/DocumentUpdateUpload"
+                            }
+                        },
+                    },
+                },
                 "responses": {"200": {"description": "Updated"}},
             },
             "delete": {
                 "summary": "Deactivate a document",
-                "responses": {"204": {"description": "Deactivated"}},
+                "responses": {"200": {"description": "Deactivated"}},
             },
         },
         "/knowledge/ask/": {
@@ -119,7 +145,6 @@ OPENAPI_SCHEMA = {
                 "properties": {
                     "title": {"type": "string"},
                     "content": {"type": "string"},
-                    "source_name": {"type": "string"},
                 },
             },
             "DocumentUpload": {
@@ -128,7 +153,20 @@ OPENAPI_SCHEMA = {
                 "properties": {
                     "title": {"type": "string"},
                     "file": {"type": "string", "format": "binary"},
-                    "source_name": {"type": "string"},
+                },
+            },
+            "DocumentUpdate": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string"},
+                    "content": {"type": "string"},
+                },
+            },
+            "DocumentUpdateUpload": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string"},
+                    "file": {"type": "string", "format": "binary"},
                 },
             },
             "AskRequest": {
